@@ -1,0 +1,669 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Zayn's Question Block Quest</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background-color: #111;
+            color: #fff;
+            font-family: 'Inter', sans-serif;
+            touch-action: none; /* Previne scroll/zoom em dispositivos mobile */
+        }
+        
+        #game-container {
+            position: relative;
+            width: 100vw;
+            height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            background-color: #222;
+        }
+
+        canvas {
+            /* Mantém a proporção do jogo independentemente do tamanho da tela */
+            max-width: 100%;
+            max-height: 100%;
+            object-fit: contain;
+            box-shadow: 0 0 20px rgba(0,0,0,0.5);
+        }
+
+        /* Controles Mobile */
+        .mobile-controls {
+            position: absolute;
+            bottom: 20px;
+            width: 100%;
+            display: flex;
+            justify-content: space-between;
+            padding: 0 20px;
+            box-sizing: border-box;
+            pointer-events: none; /* Permite clicar através do container */
+            z-index: 10;
+        }
+
+        .d-pad, .action-buttons {
+            display: flex;
+            gap: 10px;
+            pointer-events: auto;
+        }
+
+        .control-btn {
+            width: 60px;
+            height: 60px;
+            background-color: rgba(255, 255, 255, 0.2);
+            border: 2px solid rgba(255, 255, 255, 0.5);
+            border-radius: 50%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-size: 24px;
+            color: white;
+            user-select: none;
+            -webkit-user-select: none;
+            backdrop-filter: blur(4px);
+            transition: background-color 0.1s;
+        }
+
+        .control-btn:active, .control-btn.active {
+            background-color: rgba(255, 255, 255, 0.5);
+        }
+
+        /* Ocultar controles em telas grandes (opcional, mas mantido para teste) */
+        @media (min-width: 1024px) {
+            .mobile-controls {
+                opacity: 0.5; /* Deixa visível mas discreto no desktop */
+            }
+        }
+
+        .modal-overlay {
+            background-color: rgba(0, 0, 0, 0.8);
+            backdrop-filter: blur(5px);
+        }
+        
+        .hidden { display: none !important; }
+    </style>
+</head>
+<body>
+
+    <!-- MENU INICIAL -->
+    <div id="main-menu" class="absolute inset-0 z-50 flex flex-col items-center justify-center bg-gray-900 bg-opacity-95 p-4">
+        <h1 class="text-4xl md:text-6xl font-bold text-center mb-8 text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-purple-500">Platformer Quiz</h1>
+        
+        <div class="bg-gray-800 p-6 rounded-2xl shadow-2xl max-w-md w-full border border-gray-700">
+            <div class="mb-6">
+                <label class="block text-sm font-medium text-gray-300 mb-2">1. Escolha o Mundo</label>
+                <select id="theme-select" class="w-full bg-gray-700 text-white rounded-lg p-3 outline-none focus:ring-2 focus:ring-blue-500 border-none transition-all">
+                    <option value="classic">Classic (Mario-style)</option>
+                    <option value="farm">Farm</option>
+                    <option value="harry">Harry Potter</option>
+                </select>
+            </div>
+
+            <div class="mb-8">
+                <label class="block text-sm font-medium text-gray-300 mb-2">2. Escolha a Skin</label>
+                <select id="skin-select" class="w-full bg-gray-700 text-white rounded-lg p-3 outline-none focus:ring-2 focus:ring-blue-500 border-none transition-all">
+                    <!-- Opções dinâmicas -->
+                </select>
+            </div>
+
+            <button id="start-btn" class="w-full bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-500 hover:to-purple-500 text-white font-bold py-3 px-4 rounded-lg shadow-lg transform transition hover:scale-105 active:scale-95">
+                INICIAR JOGO
+            </button>
+            <p class="text-center text-xs text-gray-400 mt-4">Desktop: Setas/AWSD para mover, Espaço/Cima para pular.<br>Mobile: Controles na tela.</p>
+        </div>
+    </div>
+
+    <!-- HUD (Score) -->
+    <div id="hud" class="absolute top-4 left-4 z-40 hidden pointer-events-none">
+        <div class="bg-black bg-opacity-50 text-white px-4 py-2 rounded-lg border border-gray-600 font-mono text-xl shadow-lg">
+            Score: <span id="score-display" class="text-yellow-400 font-bold">0</span>
+        </div>
+    </div>
+
+    <!-- GAME CONTAINER -->
+    <div id="game-container">
+        <!-- Resolução lógica fixa para a física não quebrar, CSS cuida da responsividade -->
+        <canvas id="gameCanvas" width="800" height="600"></canvas>
+        
+        <!-- CONTROLES MOBILE -->
+        <div id="mobile-controls" class="mobile-controls hidden">
+            <div class="d-pad">
+                <div class="control-btn" id="btn-left">◀</div>
+                <div class="control-btn" id="btn-right">▶</div>
+            </div>
+            <div class="action-buttons">
+                <div class="control-btn" id="btn-jump" style="width: 70px; height: 70px;">▲</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- QUIZ MODAL -->
+    <div id="quiz-modal" class="absolute inset-0 z-50 flex items-center justify-center modal-overlay hidden px-4">
+        <div class="bg-gray-800 p-6 md:p-8 rounded-2xl shadow-2xl max-w-lg w-full border-2 border-yellow-500 text-center transform scale-100 transition-transform">
+            <div class="text-yellow-400 text-5xl mb-4">?</div>
+            <h2 class="text-2xl font-bold mb-2 text-white">Pergunta Misteriosa!</h2>
+            <p class="text-gray-300 mb-6 text-sm">Qual álbum do ZAYN contém a seguinte música?</p>
+            
+            <div class="bg-gray-700 p-4 rounded-lg mb-6 shadow-inner">
+                <p id="quiz-song-name" class="text-xl font-bold text-blue-300">"Nome da Música"</p>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-3 mb-6">
+                <!-- Opções fixas mapeadas para os álbuns -->
+                <button class="quiz-option bg-gray-700 hover:bg-blue-600 text-white font-semibold py-3 px-4 rounded border border-gray-600 hover:border-blue-400 transition" data-answer="Mind of Mine">A) Mind of Mine</button>
+                <button class="quiz-option bg-gray-700 hover:bg-blue-600 text-white font-semibold py-3 px-4 rounded border border-gray-600 hover:border-blue-400 transition" data-answer="Icarus Falls">B) Icarus Falls</button>
+                <button class="quiz-option bg-gray-700 hover:bg-blue-600 text-white font-semibold py-3 px-4 rounded border border-gray-600 hover:border-blue-400 transition" data-answer="Nobody Is Listening">C) Nobody Is Listening</button>
+                <button class="quiz-option bg-gray-700 hover:bg-blue-600 text-white font-semibold py-3 px-4 rounded border border-gray-600 hover:border-blue-400 transition" data-answer="Room Under the Stairs">D) Room Under the Stairs</button>
+            </div>
+            
+            <div id="quiz-feedback" class="h-6 font-bold text-lg"></div>
+        </div>
+    </div>
+
+    <script>
+        
+        // Dados do Menu
+        const SKINS_PER_THEME = {
+            classic: [
+                {id: 'normal', name: 'Normal Outfit', color: '#e74c3c', src: 'zayn_normal.jpg'}, 
+                {id: 'mario', name: 'Mario Outfit', color: '#ff0000', src:'zayn_mario.jpg'}, 
+                {id: 'luigi', name: 'Luigi Outfit', color: '#00aa00', src:'zayn_luigi.jpg'}],
+
+            farm: [
+                {id: 'normal', name: 'Normal Outfit', color: '#e74c3c', src:'zayn_normal.jpg'}, 
+                {id: 'farmer', name: 'Farmer Outfit', color: '#8b4513', src:'zayn_farm.jpg'}],
+
+            harry: [
+                {id: 'normal', name: 'Normal Outfit', color: '#e74c3c', src:'zayn_normal.jpg'}, 
+                {id: 'slytherin', name: 'Slytherin', color: '#1a472a', src:'zayn_sonserina.jpg'}, 
+                {id: 'gryffindor', name: 'Gryffindor', color: '#740001', src:'zayn_gryffindor.jpg'}, 
+                {id: 'voldemort', name: 'Voldemort', color: '#000000', src:'zayn_voldemort.jpg'}]
+        };
+
+        const THEME_COLORS = {
+            classic: { bg: '#5c94fc', ground: '#c84c0c', grass: '#00a800', brick: '#cc4c0c', question: '#fc9838' },
+            farm: { bg: '#87CEEB', ground: '#8B4513', grass: '#32CD32', brick: '#A0522D', question: '#FFD700' },
+            harry: { bg: '#0b162c', ground: '#333333', grass: '#4a5a6a', brick: '#555555', question: '#d4af37' }
+        };
+
+        // Banco de Dados do Quiz (ZAYN)
+        const QUIZ_DATABASE = {
+            classic: [
+                { song: "PILLOWTALK", album: "Mind of Mine" },
+                { song: "Let Me", album: "Icarus Falls" },
+                { song: "Vibez", album: "Nobody Is Listening" },
+                { song: "What I Am", album: "Room Under the Stairs" }
+            ],
+            farm: [
+                { song: "Alienated", album: "Room Under the Stairs" },
+                { song: "Better", album: "Nobody Is Listening" },
+                { song: "Dusk Till Dawn", album: "Icarus Falls" },
+                { song: "iT's YoU", album: "Mind of Mine" }
+            ],
+            harry: [
+                { song: "LIKE I WOULD", album: "Mind of Mine" },
+                { song: "Entertainer", album: "Icarus Falls" },
+                { song: "Sweat", album: "Nobody Is Listening" },
+                { song: "Grabbing the Wheel", album: "Room Under the Stairs" }
+            ]
+        };
+
+        // Estado Global do Jogo
+        const GameState = {
+            state: 'menu', // 'menu', 'playing', 'paused_quiz'
+            theme: 'classic',
+            skin: null,
+            score: 0,
+            cameraX: 0,
+            currentQuestionBlock: null
+        };
+
+        const Input = { left: false, right: false, up: false };
+
+        
+        class Entity {
+            constructor(x, y, w, h) {
+                this.x = x;
+                this.y = y;
+                this.w = w;
+                this.h = h;
+                this.vx = 0;
+                this.vy = 0;
+            }
+        }
+
+        class Player extends Entity {
+    constructor(x, y, skinObj) {
+        // Ajuste a largura (w) e altura (h) do personagem no jogo
+        super(x, y, 48, 64); 
+        this.color = skinObj.color;
+        this.speed = 4;
+        this.jumpForce = -12;
+        this.grounded = false;
+        this.facingRight = true;
+        
+        // Configurações do SpriteSheet
+        this.spriteImage = new Image();
+        if (skinObj.src) {
+            this.spriteImage.src = skinObj.src;
+        }
+        
+        // Variáveis de Animação
+        this.frameX = 0; // Coluna atual
+        this.frameY = 0; // Linha atual (0=Parado, 1=Andando, 2=Pulando, etc.)
+        this.gameFrame = 0;
+        this.staggerFrames = 5; // Velocidade da animação (menor = mais rápido)
+        
+        // Tamanho de cada frame original na imagem (ajuste conforme a imagem real)
+        this.spriteWidth = 100; 
+        this.spriteHeight = 100; 
+    }
+
+    update() {
+        // Movimento Horizontal
+        if (Input.left) {
+            this.vx = -this.speed;
+            this.facingRight = false;
+        } else if (Input.right) {
+            this.vx = this.speed;
+            this.facingRight = true;
+        } else {
+            this.vx = 0;
+        }
+
+        // Pulo
+        if (Input.up && this.grounded) {
+            this.vy = this.jumpForce;
+            this.grounded = false;
+        }
+
+        // Gravidade
+        this.vy += 0.5;
+        if (this.vy > 12) this.vy = 12;
+
+        // --- LÓGICA DE ANIMAÇÃO ---
+        this.gameFrame++;
+        
+        if (!this.grounded) {
+            // Se está no ar (Pulando/Caindo)
+            this.frameY = 2; // Exemplo: 3ª linha do sprite é o pulo
+            this.frameX = 0;
+        } else if (this.vx !== 0) {
+            // Se está andando
+            this.frameY = 1; // Exemplo: 2ª linha é a caminhada
+            if (this.gameFrame % this.staggerFrames === 0) {
+                // Alterna entre os frames de caminhada (ex: 0 a 3)
+                this.frameX = (this.frameX + 1) % 4; 
+            }
+        } else {
+            // Se está parado
+            this.frameY = 0; // Exemplo: 1ª linha é ele parado
+            this.frameX = 0;
+        }
+    }
+
+    draw(ctx) {
+        if (this.spriteImage.complete && this.spriteImage.src) {
+            ctx.save();
+            
+            // Lógica para espelhar a imagem se estiver andando para a esquerda
+            if (!this.facingRight) {
+                ctx.translate(this.x + this.w, this.y);
+                ctx.scale(-1, 1);
+            } else {
+                ctx.translate(this.x, this.y);
+            }
+
+            // ctx.drawImage(imagem, recorteX, recorteY, recorteLargura, recorteAltura, posX, posY, largFinal, altFinal)
+            ctx.drawImage(
+                this.spriteImage,
+                this.frameX * this.spriteWidth,
+                this.frameY * this.spriteHeight,
+                this.spriteWidth,
+                this.spriteHeight,
+                0, // 0 porque já usamos o translate acima
+                0,
+                this.w,
+                this.h
+            );
+            
+            ctx.restore();
+        } else {
+            // Fallback: Retângulo colorido se a imagem não carregar
+            ctx.fillStyle = this.color;
+            ctx.fillRect(this.x, this.y, this.w, this.h);
+            ctx.fillStyle = '#fff';
+            let eyeX = this.facingRight ? this.x + 30 : this.x + 10;
+            ctx.fillRect(eyeX, this.y + 10, 8, 8);
+        }
+    }
+}
+
+        class Block extends Entity {
+            constructor(x, y, w, h, type) {
+                super(x, y, w, h);
+                this.type = type; // 'ground', 'brick', 'question'
+                this.used = false; // Apenas para type 'question'
+            }
+
+            draw(ctx, themeColors) {
+                // FUTURO: Imagens de sprite baseadas no tipo
+                if (this.type === 'ground') {
+                    ctx.fillStyle = themeColors.ground;
+                    ctx.fillRect(this.x, this.y, this.w, this.h);
+                    ctx.fillStyle = themeColors.grass;
+                    ctx.fillRect(this.x, this.y, this.w, 8); // Topo como grama
+                } else if (this.type === 'brick') {
+                    ctx.fillStyle = themeColors.brick;
+                    ctx.fillRect(this.x, this.y, this.w, this.h);
+                    ctx.strokeStyle = '#000';
+                    ctx.strokeRect(this.x, this.y, this.w, this.h);
+                } else if (this.type === 'question') {
+                    ctx.fillStyle = this.used ? '#777' : themeColors.question;
+                    ctx.fillRect(this.x, this.y, this.w, this.h);
+                    ctx.strokeStyle = '#000';
+                    ctx.strokeRect(this.x, this.y, this.w, this.h);
+                    
+                    if (!this.used) {
+                        ctx.fillStyle = '#fff';
+                        ctx.font = '24px font-bold rounded';
+                        ctx.textAlign = 'center';
+                        ctx.fillText('?', this.x + this.w/2, this.y + 30);
+                    }
+                }
+            }
+        }
+
+        
+        class GameEngine {
+            constructor(canvas) {
+                this.canvas = canvas;
+                this.ctx = canvas.getContext('2d');
+                this.lastTime = 0;
+                this.player = null;
+                this.blocks = [];
+                this.levelEnd = 2500;
+                this.animationReq = null;
+            }
+
+            initLevel() {
+                const colors = THEME_COLORS[GameState.theme];
+                const skinObj = SKINS_PER_THEME[GameState.theme].find(s => s.id === GameState.skin) || SKINS_PER_THEME[GameState.theme][0];
+                
+                this.player = new Player(100, 400, skinObj);
+                this.blocks = [];
+                GameState.cameraX = 0;
+
+                // Chão base
+                for(let i=0; i<60; i++) {
+                    if (i === 10 || i === 11) continue; // buraco
+                    this.blocks.push(new Block(i * 50, 500, 50, 100, 'ground'));
+                }
+
+                // Plataformas e Blocos Misteriosos
+                this.blocks.push(new Block(300, 350, 40, 40, 'brick'));
+                this.blocks.push(new Block(340, 350, 40, 40, 'question'));
+                this.blocks.push(new Block(380, 350, 40, 40, 'brick'));
+                this.blocks.push(new Block(420, 350, 40, 40, 'question'));
+                this.blocks.push(new Block(460, 350, 40, 40, 'brick'));
+
+                this.blocks.push(new Block(700, 250, 40, 40, 'question'));
+                
+                this.blocks.push(new Block(900, 400, 50, 100, 'brick')); // obstáculo
+                
+                this.blocks.push(new Block(1200, 350, 40, 40, 'question'));
+                this.blocks.push(new Block(1240, 350, 40, 40, 'question'));
+
+                // Atualiza score UI
+                document.getElementById('score-display').innerText = GameState.score;
+            }
+
+            start() {
+                GameState.state = 'playing';
+                this.initLevel();
+                if(this.animationReq) cancelAnimationFrame(this.animationReq);
+                this.loop(0);
+            }
+
+            handleCollisions() {
+                let p = this.player;
+                p.grounded = false;
+
+                // Movimento X e colisão
+                p.x += p.vx;
+                for (let block of this.blocks) {
+                    if (this.checkAABB(p, block)) {
+                        if (p.vx > 0) p.x = block.x - p.w; // Bateu na direita
+                        else if (p.vx < 0) p.x = block.x + block.w; // Bateu na esquerda
+                        p.vx = 0;
+                    }
+                }
+
+                // Movimento Y e colisão
+                p.y += p.vy;
+                for (let block of this.blocks) {
+                    if (this.checkAABB(p, block)) {
+                        if (p.vy > 0) {
+                            // Caindo em cima do bloco
+                            p.y = block.y - p.h;
+                            p.vy = 0;
+                            p.grounded = true;
+                        } else if (p.vy < 0) {
+                            // Bateu a CABEÇA no bloco (Trigger do Quiz)
+                            p.y = block.y + block.h;
+                            p.vy = 0;
+                            
+                            if (block.type === 'question' && !block.used && GameState.state === 'playing') {
+                                this.triggerQuiz(block);
+                            }
+                        }
+                    }
+                }
+
+                // Morte por queda (Buracos)
+                if (p.y > this.canvas.height) {
+                    this.die();
+                }
+
+                // Limites da tela à esquerda
+                if (p.x < 0) p.x = 0;
+            }
+
+            checkAABB(rect1, rect2) {
+                return rect1.x < rect2.x + rect2.w &&
+                       rect1.x + rect1.w > rect2.x &&
+                       rect1.y < rect2.y + rect2.h &&
+                       rect1.h + rect1.y > rect2.y;
+            }
+
+            triggerQuiz(block) {
+                GameState.state = 'paused_quiz';
+                GameState.currentQuestionBlock = block;
+                
+                // Abre o modal do Quiz
+                const themeData = QUIZ_DATABASE[GameState.theme];
+                const randomQuiz = themeData[Math.floor(Math.random() * themeData.length)];
+                
+                // Guarda a resposta certa no botão temporariamente
+                window.currentCorrectAnswer = randomQuiz.album;
+                
+                document.getElementById('quiz-song-name').innerText = `"${randomQuiz.song}"`;
+                document.getElementById('quiz-feedback').innerText = "";
+                document.getElementById('quiz-modal').classList.remove('hidden');
+                
+                // Zera inputs para ele não sair andando ao voltar
+                Input.left = Input.right = Input.up = false;
+            }
+
+            die() {
+                // Simples reset temporário
+                this.initLevel();
+            }
+
+            loop(timestamp) {
+                if (GameState.state === 'playing') {
+                    // Update
+                    this.player.update();
+                    this.handleCollisions();
+                    
+                    // Atualiza Câmera
+                    const targetCamX = this.player.x - this.canvas.width / 3;
+                    if (targetCamX > GameState.cameraX) {
+                        GameState.cameraX = targetCamX; // Câmera só vai pra frente (estilo Mario antigo) ou segue.
+                    }
+
+                    // Draw
+                    const colors = THEME_COLORS[GameState.theme];
+                    this.ctx.fillStyle = colors.bg;
+                    this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+
+                    this.ctx.save();
+                    this.ctx.translate(-Math.floor(GameState.cameraX), 0);
+
+                    // Desenha Blocos
+                    for (let block of this.blocks) {
+                        // Otimização: Só desenha o que tá na tela
+                        if (block.x + block.w > GameState.cameraX && block.x < GameState.cameraX + this.canvas.width) {
+                            block.draw(this.ctx, colors);
+                        }
+                    }
+
+                    // Desenha Player
+                    this.player.draw(this.ctx);
+
+                    this.ctx.restore();
+                }
+
+                this.animationReq = requestAnimationFrame(this.loop.bind(this));
+            }
+        }
+
+        
+        // Elementos DOM
+        const themeSelect = document.getElementById('theme-select');
+        const skinSelect = document.getElementById('skin-select');
+        const startBtn = document.getElementById('start-btn');
+        const mainMenu = document.getElementById('main-menu');
+        const hud = document.getElementById('hud');
+        const mobileControls = document.getElementById('mobile-controls');
+        
+        // Game Engine Instância
+        const canvas = document.getElementById('gameCanvas');
+        const engine = new GameEngine(canvas);
+
+        function populateSkins() {
+            const theme = themeSelect.value;
+            skinSelect.innerHTML = '';
+            SKINS_PER_THEME[theme].forEach(skin => {
+                const opt = document.createElement('option');
+                opt.value = skin.id;
+                opt.innerText = skin.name;
+                skinSelect.appendChild(opt);
+            });
+        }
+
+        themeSelect.addEventListener('change', populateSkins);
+        
+        // Inicializa skins na abertura
+        populateSkins();
+
+        startBtn.addEventListener('click', () => {
+            GameState.theme = themeSelect.value;
+            GameState.skin = skinSelect.value;
+            GameState.score = 0;
+            
+            mainMenu.classList.add('hidden');
+            hud.classList.remove('hidden');
+            mobileControls.classList.remove('hidden');
+            
+            engine.start();
+        });
+
+        // Controles de Teclado
+        window.addEventListener('keydown', (e) => {
+            if (GameState.state !== 'playing') return;
+            if (e.code === 'ArrowLeft' || e.code === 'KeyA') Input.left = true;
+            if (e.code === 'ArrowRight' || e.code === 'KeyD') Input.right = true;
+            if (e.code === 'ArrowUp' || e.code === 'Space' || e.code === 'KeyW') Input.up = true;
+        });
+
+        window.addEventListener('keyup', (e) => {
+            if (e.code === 'ArrowLeft' || e.code === 'KeyA') Input.left = false;
+            if (e.code === 'ArrowRight' || e.code === 'KeyD') Input.right = false;
+            if (e.code === 'ArrowUp' || e.code === 'Space' || e.code === 'KeyW') Input.up = false;
+        });
+
+        // Controles Touch (Mobile)
+        const setupTouchBtn = (btnId, inputKey) => {
+            const btn = document.getElementById(btnId);
+            
+            // Previne context menu e zoom
+            btn.addEventListener('contextmenu', e => e.preventDefault());
+            
+            btn.addEventListener('touchstart', (e) => {
+                e.preventDefault();
+                if (GameState.state === 'playing') Input[inputKey] = true;
+                btn.classList.add('active');
+            }, {passive: false});
+
+            btn.addEventListener('touchend', (e) => {
+                e.preventDefault();
+                Input[inputKey] = false;
+                btn.classList.remove('active');
+            }, {passive: false});
+
+            btn.addEventListener('touchcancel', (e) => {
+                Input[inputKey] = false;
+                btn.classList.remove('active');
+            }, {passive: false});
+        };
+
+        setupTouchBtn('btn-left', 'left');
+        setupTouchBtn('btn-right', 'right');
+        setupTouchBtn('btn-jump', 'up');
+
+        // Lógica dos Botões do Quiz
+        const quizButtons = document.querySelectorAll('.quiz-option');
+        const quizModal = document.getElementById('quiz-modal');
+        const feedbackEl = document.getElementById('quiz-feedback');
+
+        quizButtons.forEach(btn => {
+            btn.addEventListener('click', function() {
+                if (GameState.state !== 'paused_quiz') return;
+                
+                const chosenAnswer = this.getAttribute('data-answer');
+                const isCorrect = (chosenAnswer === window.currentCorrectAnswer);
+                
+                if (isCorrect) {
+                    feedbackEl.innerText = "Correto! +100 Pontos!";
+                    feedbackEl.className = "h-6 font-bold text-lg text-green-400";
+                    GameState.score += 100;
+                    document.getElementById('score-display').innerText = GameState.score;
+                } else {
+                    feedbackEl.innerText = `Incorreto! Era ${window.currentCorrectAnswer}.`;
+                    feedbackEl.className = "h-6 font-bold text-lg text-red-400";
+                }
+
+                // Desativa o bloco após resposta
+                if (GameState.currentQuestionBlock) {
+                    GameState.currentQuestionBlock.used = true;
+                }
+
+                // Aguarda 1.5s para fechar o modal e voltar o jogo
+                setTimeout(() => {
+                    quizModal.classList.add('hidden');
+                    GameState.state = 'playing';
+                    // Pequeno pulo automático ao sair do bloco
+                    engine.player.vy = engine.player.jumpForce / 2;
+                }, 1500);
+            });
+        });
+
+    </script>
+</body>
+</html>
